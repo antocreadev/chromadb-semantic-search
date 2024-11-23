@@ -1,8 +1,16 @@
 # %%
-from sentence_transformers import SentenceTransformer
 import chromadb
+
+import numpy as np
+import pandas as pd
+
 import seaborn as sns
 import matplotlib.pyplot as plt
+
+from sentence_transformers import SentenceTransformer
+
+from sklearn.cluster import DBSCAN
+from sklearn.metrics.pairwise import cosine_distances
 
 # %%
 model = SentenceTransformer('sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2')
@@ -24,7 +32,14 @@ client = chromadb.Client()
 
 # %%
 try :
-    collection = client.create_collection(name="my_collection")
+    collection = client.create_collection(name="my_collection", 
+                                          metadata={"hnsw:space": "l2"} 
+                                          )
+    
+# La valeur par défaut de la métrique est la distance euclidienne (l2)
+# l2 = distance euclidienne
+# cosine = distance cosinus
+# ip = distance produit scalaire
 except Exception as e:
     print(e)
 
@@ -44,11 +59,15 @@ except Exception as e:
 try : 
   collection.add(
       documents=document_source,
-      embeddings=embeddings_source.tolist(), 
+      embeddings=embeddings_source, 
       ids=[str(i) for i in range(len(document_source))]
   )
 except Exception as e:
   print(e)
+
+# %%
+#Afficher un exemple d'embedding 
+print(embeddings_source)
 
 # %%
 def evaluate_documents(documents_to_test, collection, model, description):
@@ -89,5 +108,34 @@ sns.regplot(x=[i for i in range(len(document_similaire))], y=distance_similaire,
 # sns.lineplot(x=[i for i in range(len(document_different))], y=distance_different, color='#b9f2f0')
 # sns.lineplot(x=[i for i in range(len(document_similaire))], y=distance_similaire , color='#f2b9f2')
 plt.legend()
+
+# %%
+def cluster_dbscan(embeddings_source, eps, min_samples) :
+    # Utiliser si le model d'embedding ne renvoie pas un np array : 
+    # embeddings_source_np = np.array(embeddings_source)
+    embeddings_source_np = embeddings_source
+
+    
+    cosine_dist_matrix = cosine_distances(embeddings_source_np)
+
+    dbscan = DBSCAN(metric="precomputed", eps=eps, min_samples=min_samples)
+    clusters = dbscan.fit_predict(cosine_dist_matrix)
+
+    print(f"Clusters trouvés : {set(clusters)}")  
+    for cluster_id in set(clusters):
+        print(f"\nCluster {cluster_id}:")
+        for i, doc in enumerate(document_source):
+            if clusters[i] == cluster_id:
+                print(f" - {doc}")
+    return clusters
+
+clusters = cluster_dbscan(embeddings_source, 0.5, 2)
+
+
+# %%
+fig = plt.figure()
+ax = fig.add_subplot(111, projection='3d')
+ax.scatter(embeddings_source[:, 0], embeddings_source[:, 1], embeddings_source[:, 2], c=clusters, s=50, cmap='viridis')
+plt.show()
 
 
